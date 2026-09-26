@@ -1,0 +1,6 @@
+# Keep LF everywhere: scripts, Terraform and manifests run on Linux (EC2, CI, containers)
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.gif binary
