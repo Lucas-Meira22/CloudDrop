@@ -1,0 +1,18 @@
+services:
+  clouddrop:
+    build: .
+    image: clouddrop:local
+    ports:
+      - "8000:8000"
+    environment:
+      BUCKET_NAME: ${BUCKET_NAME:-clouddrop-local}
+      REGION: us-east-1
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      - clouddrop
