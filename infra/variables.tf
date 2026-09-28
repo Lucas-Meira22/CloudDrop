@@ -21,3 +21,8 @@ variable "instance_type" {
   type        = string
   default     = "t3.small"
 }
+
+variable "budget_email" {
+  description = "Email that receives the budget alerts (set in terraform.tfvars, never committed)"
+  type        = string
+}
