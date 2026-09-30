@@ -1,5 +1,9 @@
+# Account ID makes the global bucket name unique without a random suffix,
+# so the name survives destroy/apply and can live in git (k8s overlay)
+data "aws_caller_identity" "current" {}
+
 resource "aws_s3_bucket" "app" {
-  bucket_prefix = "${var.project_name}-files-"
+  bucket        = "${var.project_name}-files-${data.aws_caller_identity.current.account_id}-${var.region}"
   force_destroy = true
 
   tags = {
