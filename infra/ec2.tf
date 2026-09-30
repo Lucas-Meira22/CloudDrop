@@ -19,7 +19,12 @@ resource "aws_instance" "cloudDrop-instance" {
 
   # Installs k3s on first boot. Changing the script replaces the instance,
   # because user_data only runs once.
-  user_data                   = file("${path.module}/user_data.sh")
+
+  user_data = templatefile("${path.module}/user_data.sh", {
+    region       = var.region
+    namespace    = var.project_name
+    ecr_registry = split("/", aws_ecr_repository.app.repository_url)[0]
+  })
   user_data_replace_on_change = true
 
   # IMDSv2 only (blocks SSRF credential theft). Hop limit 2 so pods, one
