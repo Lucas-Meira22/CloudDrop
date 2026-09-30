@@ -1,9 +1,4 @@
-# Adopts the budget created by hand during setup, instead of creating a duplicate.
-# After the first apply, this block can be deleted: the budget is then in the state.
-import {
-  to = aws_budgets_budget.monthly
-  id = "137286422208:clouddrop-monthly"
-}
+
 
 # Emails when the month's spend passes 85% and 100% of US$10,
 # and early if AWS forecasts the month will end above US$10
