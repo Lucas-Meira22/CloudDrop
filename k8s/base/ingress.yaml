@@ -1,0 +1,25 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: clouddrop
+  labels:
+    app: clouddrop
+spec:
+  ingressClassName: traefik
+  rules:
+    - http:
+        paths:
+          - path: /files
+            pathType: Prefix
+            backend:
+              service:
+                name: clouddrop
+                port:
+                  name: http
+          - path: /healthz
+            pathType: Prefix
+            backend:
+              service:
+                name: clouddrop
+                port:
+                  name: http
