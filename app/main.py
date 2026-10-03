@@ -16,7 +16,7 @@ REGION = os.getenv("REGION")
 # SigV4 so pre-signed URLs work: buckets created after June 2020 reject SigV2 links
 s3_client = boto3.client("s3", region_name=REGION, config=Config(signature_version="s3v4"))
 
-app = FastAPI(title="CloudDrop", version="0.1.0")
+app = FastAPI(title="CloudDrop", version="1.0.0")
 
 # Routes that call S3 are plain `def`, not `async def`: boto3 blocks while it waits
 # for AWS, and FastAPI runs `def` routes in a thread pool so one slow S3 call can't
