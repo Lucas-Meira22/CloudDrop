@@ -13,4 +13,4 @@ configMapGenerator:
 
 images:
 - name: 137286422208.dkr.ecr.us-east-1.amazonaws.com/clouddrop
-  newTag: 8412e5494de92a4c0de365952eb953474b64276b
+  newTag: d33ae5b62bffe9fb3d165e37e2962ba0e3a1e74c
