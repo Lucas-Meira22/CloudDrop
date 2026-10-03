@@ -1,7 +1,5 @@
 import logging
 import os
-import os
-
 from typing import Annotated
 
 import boto3  # type: ignore[reportMissingImports]
