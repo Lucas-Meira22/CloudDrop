@@ -20,11 +20,12 @@ data "aws_iam_policy_document" "github_assume" {
       values   = ["sts.amazonaws.com"]
     }
 
-    # Only pushes to main in this repo, not forks, PRs or other branches
+    # Only pushes to main in this repo, not forks, PRs or other branches.
+    # GitHub's immutable subject adds the owner and repo IDs, so a new repo reusing the name can't match
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:Lucas-Meira22/CloudDrop:ref:refs/heads/main"]
+      values   = ["repo:Lucas-Meira22@82990073/CloudDrop@1387493323:ref:refs/heads/main"]
     }
   }
 }
