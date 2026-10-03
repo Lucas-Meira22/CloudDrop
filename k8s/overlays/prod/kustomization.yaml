@@ -2,15 +2,15 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 resources:
-  - ../../base
+- ../../base
 
 # The bucket is per environment, so prod adds it on top of the base config
 configMapGenerator:
-  - name: clouddrop-config
-    behavior: merge
-    literals:
-      - BUCKET_NAME=clouddrop-files-137286422208-us-east-1
+- behavior: merge
+  literals:
+  - BUCKET_NAME=clouddrop-files-137286422208-us-east-1
+  name: clouddrop-config
 
 images:
-  - name: 137286422208.dkr.ecr.us-east-1.amazonaws.com/clouddrop
-    newTag: e8c2590
+- name: 137286422208.dkr.ecr.us-east-1.amazonaws.com/clouddrop
+  newTag: 8412e5494de92a4c0de365952eb953474b64276b
