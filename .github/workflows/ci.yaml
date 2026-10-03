@@ -54,7 +54,9 @@ jobs:
     name: Build and scan image
     needs: test
     runs-on: ubuntu-latest
-
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v5
 
@@ -68,3 +70,24 @@ jobs:
           severity: CRITICAL
           ignore-unfixed: true
           exit-code: "1"
+
+      - name: Configure AWS credentials
+        if: github.event_name == 'push'
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: arn:aws:iam::137286422208:role/clouddrop-github-ci
+          aws-region: us-east-1
+
+      - name: Log in to ECR
+        if: github.event_name == 'push'
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
+      
+      - name: Push image to ECR
+        if: github.event_name == 'push'
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          TAG: ${{ github.sha }}
+        run: |
+          docker tag clouddrop:$TAG $REGISTRY/clouddrop:$TAG
+          docker push $REGISTRY/clouddrop:$TAG
