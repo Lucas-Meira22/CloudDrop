@@ -1,0 +1,45 @@
+# Helm values for the argo/argo-cd chart, trimmed to fit a t3.small next to the app
+
+# SSO server. We log in with the built-in admin user, so it isn't needed
+dex:
+  enabled: false
+
+# Sends Slack/email alerts on sync events. Not used here
+notifications:
+  enabled: false
+
+# Reconciles Applications: compares Git with the cluster and syncs them
+controller:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+
+# Clones the repo and renders the manifests (runs kustomize build)
+repoServer:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 256Mi
+
+# API and web UI
+server:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
+
+# Cache for rendered manifests and cluster state
+redis:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 32Mi
+    limits:
+      memory: 64Mi
