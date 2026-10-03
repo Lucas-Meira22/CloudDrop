@@ -1,4 +1,4 @@
-# Helm values for the argo/argo-cd chart, trimmed to fit a t3.small next to the app
+# Helm values for the argo/argo-cd chart, trimmed to fit one node next to the app
 
 # SSO server. We log in with the built-in admin user, so it isn't needed
 dex:
@@ -8,14 +8,16 @@ dex:
 notifications:
   enabled: false
 
-# Reconciles Applications: compares Git with the cluster and syncs them
+# Reconciles Applications: compares Git with the cluster and syncs them.
+# Holds every managed resource in memory, so it grows with what Argo CD manages;
+# 512Mi was OOMKilled while syncing kube-prometheus-stack and its large CRDs
 controller:
   resources:
     requests:
       cpu: 100m
-      memory: 256Mi
-    limits:
       memory: 512Mi
+    limits:
+      memory: 2Gi
 
 # Clones the repo and renders the manifests (runs kustomize build)
 repoServer:
