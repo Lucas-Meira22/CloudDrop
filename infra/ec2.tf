@@ -13,6 +13,9 @@ resource "aws_instance" "cloudDrop-instance" {
   ami           = data.aws_ami.ubuntu.id
   instance_type = var.instance_type
   subnet_id     = aws_subnet.public[0].id
+  lifecycle {
+    ignore_changes = [ami]
+  }
 
   vpc_security_group_ids = [aws_security_group.app.id]
   iam_instance_profile   = aws_iam_instance_profile.ec2.name
