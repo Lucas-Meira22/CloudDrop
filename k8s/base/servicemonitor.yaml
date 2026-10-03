@@ -1,0 +1,15 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: clouddrop
+  labels:
+    app: clouddrop
+spec:
+  # Which Service to scrape: the one with this label, in this namespace
+  selector:
+    matchLabels:
+      app: clouddrop
+  endpoints:
+    - port: http          # the Service's port *name*, not a number
+      path: /metrics
+      interval: 30s
