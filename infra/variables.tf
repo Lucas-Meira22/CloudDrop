@@ -17,9 +17,9 @@ variable "vpc_cidr" {
 }
 
 variable "instance_type" {
-  description = "EC2 instance type for the app server"
+  description = "EC2 instance type for the app server. 8 GB fits Argo CD and Prometheus (t3.small's 2 GB ran out); free plan accounts only allow free-tier types"
   type        = string
-  default     = "t3.small"
+  default     = "m7i-flex.large"
 }
 
 variable "budget_email" {
