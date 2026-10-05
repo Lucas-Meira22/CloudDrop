@@ -15,3 +15,12 @@ configMapGenerator:
   - name: clouddrop-config
     literals:
       - REGION=us-east-1
+  # Grafana's sidecar loads any ConfigMap with this label, from any namespace,
+  # as a dashboard. Keeping it in Git means it survives Grafana restarts
+  - name: clouddrop-dashboard
+    files:
+      - dashboards/clouddrop.json
+    options:
+      disableNameSuffixHash: true   # nothing mounts it, so no rollout to trigger
+      labels:
+        grafana_dashboard: "1"
