@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/Lucas-Meira22/CloudDrop/actions/workflows/ci.yaml/badge.svg)](https://github.com/Lucas-Meira22/CloudDrop/actions/workflows/ci.yaml)
 
-A small file-sharing API, and everything around it that a production service needs: infrastructure as code, a container pipeline with a security gate, Kubernetes, and GitOps.
+A small file-sharing API, and everything around it that a production service needs: infrastructure as code, a container pipeline with a security gate, Kubernetes, GitOps, and monitoring.
 
 The app itself is intentionally simple: upload a file, list files, get a temporary download link. The point of the project is the platform: **a `git push` turns into a tested, scanned image that Argo CD deploys to Kubernetes on AWS, with no access keys stored anywhere and no one running `kubectl`.**
 
@@ -14,6 +14,7 @@ The app itself is intentionally simple: upload a file, list files, get a tempora
 - [Architecture](#architecture)
 - [Tech stack](#tech-stack)
 - [How a change reaches production](#how-a-change-reaches-production)
+- [Observability](#observability)
 - [Security decisions](#security-decisions)
 - [Repository layout](#repository-layout)
 - [Run it locally](#run-it-locally)
@@ -62,6 +63,11 @@ flowchart LR
         subgraph EC2[EC2 m7i-flex.large running k3s]
             argo[Argo CD] -- kustomize build + apply --> app[clouddrop Deployment<br/>2-4 pods, HPA]
             traefik[Traefik Ingress] --> svc[Service] --> app
+            subgraph MON[kube-prometheus-stack]
+                prom[Prometheus] --- graf[Grafana]
+            end
+            argo -- Helm chart --> MON
+            prom -- scrapes /metrics<br/>via ServiceMonitor --> app
         end
         role[[EC2 IAM role]]
     end
@@ -89,7 +95,7 @@ Everything in AWS is created by **Terraform**, with remote state in S3 and nativ
 | Kubernetes | k3s, Kustomize (base + prod overlay), Traefik Ingress, HPA | [`k8s/`](k8s/) |
 | CI/CD | GitHub Actions, GitHub OIDC → AWS, Trivy | [`.github/workflows/ci.yaml`](.github/workflows/ci.yaml) |
 | GitOps | Argo CD (Helm chart), auto-sync + prune + self-heal | [`argocd/`](argocd/) |
-| Observability | Prometheus metrics endpoint, local Prometheus via Compose | [`prometheus.yml`](prometheus.yml) |
+| Observability | kube-prometheus-stack (Prometheus Operator, Prometheus, Grafana), ServiceMonitor, dashboard as code. Local Prometheus via Compose | [`monitoring/`](monitoring/), [`k8s/base/`](k8s/base/) |
 
 ---
 
@@ -106,6 +112,26 @@ Everything in AWS is created by **Terraform**, with remote state in S3 and nativ
 CI **never** has access to the cluster. It only writes to Git and ECR, and the cluster pulls from both. Git is the single source of truth for what runs in production.
 
 Pull requests run lint, tests, build and scan, but never push images or write to `main`.
+
+---
+
+## Observability
+
+The monitoring stack is deployed the same way as the app: by Argo CD, from Git.
+
+- **kube-prometheus-stack**, installed by the Argo CD Application [`argocd/monitoring.yaml`](argocd/monitoring.yaml). It uses two sources: the Helm chart from the Prometheus community repo, and this repo for the values file [`monitoring/values.yaml`](monitoring/values.yaml). The values are sized for one node: Alertmanager is off, and the scrape targets k3s doesn't run as separate pods (controller manager, scheduler, proxy, etcd) are disabled so they don't show as permanently down.
+- **ServiceMonitor**, [`k8s/base/servicemonitor.yaml`](k8s/base/servicemonitor.yaml). It tells the Prometheus Operator to scrape the app's `/metrics` every 30 seconds through its Service. It lives next to the app's manifests, so the app declares how it wants to be monitored.
+- **Grafana dashboard as code**, [`k8s/base/dashboards/clouddrop.json`](k8s/base/dashboards/clouddrop.json). Kustomize wraps it in a ConfigMap labeled `grafana_dashboard: "1"`, and Grafana's sidecar loads it from any namespace. The dashboard is in Git, so it survives Grafana restarts instead of living in Grafana's own database.
+
+The dashboard has five panels:
+
+| Panel | What it shows |
+|---|---|
+| Requests per second | Traffic by endpoint |
+| Latency (p50 / p95) | Typical and worst-case response times |
+| Responses by status | 2xx / 4xx / 5xx, so errors stand out |
+| CPU per pod | Against the request, the limit and the HPA's 50% target |
+| Memory per pod | Against the request and the limit |
 
 ---
 
@@ -140,11 +166,15 @@ Pull requests run lint, tests, build and scan, but never push images or write to
 ├── infra/                   Terraform: VPC, EC2 + k3s bootstrap, IAM, S3, ECR, GitHub OIDC, budget
 │   └── user_data.sh         First boot: installs k3s and a systemd timer that refreshes the ECR pull secret
 ├── k8s/
-│   ├── base/                Namespace, Deployment, Service, Ingress, HPA, ConfigMap
+│   ├── base/                Namespace, Deployment, Service, Ingress, HPA, ConfigMap, ServiceMonitor
+│   │   └── dashboards/      Grafana dashboard JSON, shipped as a ConfigMap
 │   └── overlays/prod/       Prod bucket name + image tag (updated by CI)
 ├── argocd/
 │   ├── values.yaml          Helm values for Argo CD, trimmed for a single node
-│   └── application.yaml     Argo CD Application: watches k8s/overlays/prod on main
+│   ├── application.yaml     Argo CD Application: watches k8s/overlays/prod on main
+│   └── monitoring.yaml      Argo CD Application: kube-prometheus-stack chart + values from this repo
+├── monitoring/
+│   └── values.yaml          Helm values for kube-prometheus-stack, sized for one node
 └── .github/workflows/ci.yaml
 ```
 
@@ -246,10 +276,30 @@ helm install argocd argo/argo-cd \
   --wait --timeout 10m
 ```
 
-### 5. Make sure the image exists in ECR
+### 5. Install the monitoring stack
+
+Create Grafana's admin login by hand, so the password never goes into Git:
+
+```bash
+kubectl create namespace monitoring
+kubectl create secret generic grafana-admin -n monitoring \
+  --from-literal=admin-user=admin \
+  --from-literal=admin-password='<choose-a-password>'
+```
+
+Then hand the stack to Argo CD:
+
+```bash
+kubectl apply -f https://raw.githubusercontent.com/Lucas-Meira22/CloudDrop/main/argocd/monitoring.yaml
+kubectl get applications -n argocd -w     # wait for monitoring: Synced / Healthy
+```
+
+Install this **before** the app. The app's manifests include a `ServiceMonitor`, and that resource type only exists once the chart has installed its CRDs.
+
+### 6. Make sure the image exists in ECR
 After a fresh `terraform apply`, the ECR repository is empty. Push a change under `app/`, or re-run the latest CI workflow, so the tag in the prod overlay exists before Argo CD deploys it. Otherwise the pods sit in `ImagePullBackOff`.
 
-### 6. Hand the app to Argo CD
+### 7. Hand the app to Argo CD
 
 ```bash
 kubectl apply -f https://raw.githubusercontent.com/Lucas-Meira22/CloudDrop/main/argocd/application.yaml
@@ -259,7 +309,11 @@ kubectl get pods -n clouddrop
 
 From here on, every push to `main` deploys itself.
 
-### 7. Open the Argo CD UI (optional)
+### 8. Open the Argo CD and Grafana UIs (optional)
+
+Neither UI is exposed through the Ingress. You reach them through SSM tunnels, so no inbound port is opened.
+
+**Argo CD**
 
 On the node, get the admin password and the service's ClusterIP:
 
@@ -268,7 +322,7 @@ kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.pas
 kubectl get svc argocd-server -n argocd
 ```
 
-On your machine, open an SSM tunnel to it (no inbound port is opened):
+On your machine, open an SSM tunnel to it:
 
 ```bash
 aws ssm start-session --target <instance-id> --region us-east-1 \
@@ -278,7 +332,25 @@ aws ssm start-session --target <instance-id> --region us-east-1 \
 
 Then browse to https://localhost:8443 and log in as `admin`.
 
-### 8. Tear it down
+**Grafana**
+
+On the node, get the Grafana service's ClusterIP:
+
+```bash
+kubectl get svc -n monitoring | grep grafana
+```
+
+On your machine:
+
+```bash
+aws ssm start-session --target <instance-id> --region us-east-1 \
+  --document-name AWS-StartPortForwardingSessionToRemoteHost \
+  --parameters 'host=<grafana-cluster-ip>,portNumber=80,localPortNumber=3000'
+```
+
+Browse to http://localhost:3000, log in with the `grafana-admin` secret from step 5, and open **Dashboards → CloudDrop**.
+
+### 9. Tear it down
 
 ```bash
 cd infra
@@ -319,6 +391,10 @@ hey -z 2m -c 50 http://$IP/files                # from your machine
 kubectl get hpa -n clouddrop -w                 # on the node
 ```
 
+### Monitoring
+- **Prometheus finds the app:** in Prometheus, **Status → Targets** lists `serviceMonitor/clouddrop/clouddrop/0` with one target per pod, all `UP`.
+- **The dashboard reacts:** run the `hey` load test above with Grafana open. Requests per second and CPU go up, CPU crosses the HPA's 50% line, and new pods appear as new lines in the CPU and memory panels.
+
 ### GitOps
 - **Deploy by pushing:** change something under `app/` and push. Watch the Actions run, the bot's `chore: bump clouddrop image to <sha>` commit, then `kubectl get pods -n clouddrop` switching to the new image.
 - **Self-heal:** run `kubectl delete deployment clouddrop -n clouddrop`. Argo CD recreates it within seconds, because Git says it should exist.
@@ -357,6 +433,9 @@ Real problems hit while building this, and how they were solved:
 - **A 2 GB node with no swap froze while installing Argo CD.** Five pods starting at once used up the remaining ~600 MB, and the kernel started thrashing (SSM stopped responding, CPU hit 80%). I diagnosed it from outside with CloudWatch metrics and SSM ping status, and right-sized the node in Terraform. t3.medium is blocked on AWS Free plan accounts (`FreeTierRestrictionError`), so I queried `DescribeInstanceTypes` for free-tier-eligible x86 types and chose m7i-flex.large (8 GB). Argo CD itself uses only about 125 MB at idle; it was the startup burst that broke the 2 GB node.
 - **A Helm install interrupted mid-`--wait` stays in `pending-install`**, and Helm then refuses any upgrade. The fix is `helm uninstall` and a clean reinstall.
 - **GitOps restores manifests, not artifacts.** After a `terraform destroy`/`apply`, Argo CD correctly synced Git, but the pods failed with `ImagePullBackOff: not found`, because `force_delete` had emptied ECR. The rebuild order matters: infrastructure, then CI rebuilds the image, then GitOps deploys it.
+- **Argo CD's controller was OOMKilled syncing the monitoring stack.** The application controller keeps every resource it manages in memory, and kube-prometheus-stack brings very large CRDs. Its 512 Mi limit had been fine for the app alone. Raising it to 2 Gi on the 8 GB node fixed the sync: how much memory a GitOps controller needs depends on *what* it manages, not only on how many apps there are.
+- **Grafana's password changed on every commit.** The chart generates a random admin password and uses Helm's `lookup` to keep the old one. Argo CD renders charts with `helm template`, where `lookup` returns nothing, so every sync made a new password and restarted Grafana. The fix is a Secret created by hand on the cluster (which also keeps the password out of Git) and `grafana.admin.existingSecret` pointing to it.
+- **A routine `terraform apply` wanted to replace the node.** The AMI data source picks the newest Ubuntu image, so every new daily build showed up as a change, and replacing the instance would have wiped the cluster. `lifecycle { ignore_changes = [ami] }` makes a new AMI something you choose with `-replace`, not something that happens by accident.
 - **HPA vs. self-heal.** The Deployment deliberately has no `replicas:` field. Otherwise Argo CD's self-heal and the HPA would fight over the replica count forever.
 - **`kustomize edit` reformats files.** The first bot commit re-indented the overlay. Adopting kustomize's formatting keeps every later bump a one-line diff.
 - **ECR tokens expire after 12 hours.** A systemd timer on the node refreshes the image pull secret every 6 hours using the instance role.
@@ -372,11 +451,9 @@ Real problems hit while building this, and how they were solved:
 - [x] Kubernetes manifests with Kustomize, Ingress and HPA
 - [x] CI/CD: lint, test, build, Trivy, OIDC push to ECR, GitOps tag bump
 - [x] GitOps with Argo CD: auto-sync, prune, self-heal
-- [ ] Observability on the cluster: kube-prometheus-stack, ServiceMonitor, Grafana dashboard
-- [ ] Architecture diagram image and screenshots (Argo CD, Grafana)
+- [x] Observability on the cluster: kube-prometheus-stack, ServiceMonitor, Grafana dashboard as code
 
 Ideas beyond the plan:
-- `lifecycle { ignore_changes = [ami] }` on the instance, so a newer Ubuntu AMI can't trigger a replacement on a routine `apply`
 - Have Argo CD manage its own installation (app-of-apps pattern)
 - HTTPS with cert-manager and Let's Encrypt
 - `tflint` / `checkov` in CI
