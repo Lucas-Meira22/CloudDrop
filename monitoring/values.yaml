@@ -38,6 +38,14 @@ prometheusOperator:
       memory: 128Mi
 
 grafana:
+  # Read the admin login from a Secret created by hand (kept out of Git).
+  # Otherwise the chart makes a random password on every render. Argo CD renders
+  # with `helm template`, which can't look up the old one, so each new commit
+  # would change the password and restart Grafana
+  admin:
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
   resources:
     requests:
       cpu: 50m
