@@ -39,28 +39,6 @@ prometheusOperator:
 
 grafana:
   resources:
-    # Also pick up ServiceMonitors this Helm release didn't create (like the app's)
-    serviceMonitorSelectorNilUsesHelmValues: false
-    podMonitorSelectorNilUsesHelmValues: false
-    # Keep 2 days of metrics. Without persistent storage, a pod restart loses them anyway
-    retention: 2d
-    resources:
-      requests:
-        cpu: 100m
-        memory: 512Mi
-      limits:
-        memory: 1Gi
-
-prometheusOperator:
-  resources:
-    requests:
-      cpu: 50m
-      memory: 64Mi
-    limits:
-      memory: 128Mi
-
-grafana:
-  resources:
     requests:
       cpu: 50m
       memory: 128Mi
